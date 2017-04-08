@@ -17,6 +17,7 @@ import operator
 
 swords1 = stopwords.words('english')
 punctuations = string.punctuation
+wordnet_lemmatizer = WordNetLemmatizer()
 
 print("Start")
 
@@ -30,7 +31,7 @@ def data_clean(data):
 	data = data.apply(lambda x: word_tokenize(x))
 
 	#Select only the nouns
-	is_noun = lambda pos: pos[:2] == 'NN' 
+	is_noun = lambda pos: pos[:2] == 'NN' #or pos[:2] == 'ADJ' 
 	for i in range(len(data)):
 		data[i] = [word for (word, pos) in nltk.pos_tag(data[i]) if is_noun(pos)]
 	
@@ -40,7 +41,7 @@ def data_clean(data):
 	data = data.apply(lambda x: [i.split('/') for i in x] )
 	data = data.apply(lambda x: [i for y in x for i in y])
 	#print('Lemmatizing')
-	wordnet_lemmatizer = WordNetLemmatizer()
+	
 	data = data.apply(lambda x: [wordnet_lemmatizer.lemmatize(i) for i in x])
 	data = data.apply(lambda x: [i for i in x if len(i)>2])
 	return(data)
@@ -70,7 +71,7 @@ def get_combined_frequency(content, title):
 					if word in important:
 						word_count[word] = word_count[word] + 50
 					else:
-						word_count[word] = word_count[word] + 1
+						word_count[word] = word_count[word] + 5
 				else:
 					word_count[word] = 1
 				
@@ -90,13 +91,14 @@ def get_tfidf(frequency, inverse_frequency):
 			continue
 		max_frequency = sorted(document.items(), key=operator.itemgetter(1), reverse=True)[0][1]
 		for word in document:
-			document[word] = document[word]/(max_frequency + 0.0)*np.log(len(frequency)/(inverse_frequency[word]+0.))
+			#document[word] = document[word]/(max_frequency + 0.0)*np.log(len(frequency)/(inverse_frequency[word]+0.))
+			document[word] = document[word]/(max_frequency + 0.0)*np.log(len(frequency)/(1.0 + inverse_frequency[word]))
 			#tfidf_distribution.append(document[word])
 			tfidf_distribution.append((word, document[word]))
 	return tfidf_distribution
 
 def plot_distribution(data, fileName, format):
-	val = plt.plot(np.log(data))
+	val = plt.plot(np.log(list(filter(lambda x: x is not 0, data))))
 	plt.savefig(fileName, format=format)
 	plt.close()
 	
@@ -152,8 +154,7 @@ def process_data(data):
 
 def getFScore(prediction,tags):
     if len(prediction) == 0 or len(tags) == 0:
-        return 0.0
-    tags = set(tags.split())
+        return 0.0    
     corrects = 0
     for p in prediction:
         if p in tags:
@@ -168,7 +169,7 @@ def getFScore(prediction,tags):
 def predict_tag(data, fileName):
 	predicted_tag, distribution = process_data(data)
 	distribution_lines = plot_distribution(sorted([tfidf[1] for tfidf in distribution]), fileName+"_tfidf_distribution.svg", format="svg")
-	print("plotted")
+	#print("plotted")
 	output = []
 	max_tfidf = math.ceil(distribution_lines[0].axes.get_ylim()[1])
 	print (max_tfidf)
@@ -178,17 +179,19 @@ def predict_tag(data, fileName):
 		prediction = sorted(predicted_tag[i], key=predicted_tag[i].get, reverse=True)[0: max_tfidf]		
 		id = data.id[i]
 		if 'tags' in data:
-			tags = data.tags[i]
-			f1_score = getFScore(prediction, tags)
+			tags = data.tags[i]#.replace('-', ' ')
+			tagsClean  = set([wordnet_lemmatizer.lemmatize(word) for word in tags.split()])
+			f1_score = getFScore(prediction, tagsClean)
 			scores.append(f1_score)
 			accuracy_by_id.append((id, f1_score))
 			
 			output.append([id, ' '.join(prediction), tags, f1_score])			
 		else:									
-			print("Test")			
+			#print("Test")			
 			output.append([id, data.title[i],data.content[i], ' '.join(prediction)])
 			
-	if 'tags' in data:		
+	if 'tags' in data:
+		print(fileName)
 		print(np.average(scores))
 		plot_distribution(scores, fileName+"_accuracy.svg", format="svg")
 				
