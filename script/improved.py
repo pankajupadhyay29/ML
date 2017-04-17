@@ -2,6 +2,7 @@
 import os
 import numpy as np
 import pandas as pd
+import seaborn as sns
 import nltk
 import re
 import string
@@ -90,9 +91,15 @@ def get_tfidf(frequency, inverse_frequency):
     if document == {}:
       continue
     max_frequency = sorted(document.items(), key=operator.itemgetter(1), reverse=True)[0][1]
+    total_docs = len(frequency)
+    #mean_frequency = np.mean()
     for word in document:
-      #document[word] = document[word]/(max_frequency + 0.0)*np.log(len(frequency)/(inverse_frequency[word]+0.))
-      document[word] = document[word]/(max_frequency + 0.0)*np.log(len(frequency)/(1.0 + inverse_frequency[word]))
+      frequency_value = document[word]
+      inverse_frequency_Value =inverse_frequency[word]
+      tf = frequency_value/max_frequency #frequency_value/len(document) #0.5+ (0.5*frequency_value/(max_frequency + 0.0))
+      idf = np.log(total_docs/(1.0+inverse_frequency_Value)) #np.log((total_docs-inverse_frequency_Value)/inverse_frequency_Value) #inverse_frequency[word]#np.log(total_docs/(1.0 + inverse_frequency_Value))
+      #document[word] = document[word]/(max_frequency + 0.0)*np.log(total_docs/(inverse_frequency_Value+0.))
+      document[word] = tf * idf
       tfidf_distribution.append(document[word])
       #tfidf_distribution.append((word, document[word]))
   return tfidf_distribution
@@ -101,7 +108,10 @@ def plot_distribution(data, fileName, format):
   val = plt.plot(data)
   plt.savefig(fileName, format=format)
   plt.close()
-  
+
+  sns.distplot(data);
+  sns.plt.savefig('sns_'+fileName, format=format)
+  sns.plt.close()
   return val
   
 def plot_bar(data, fileName, format):
@@ -133,31 +143,57 @@ def process_data(data):
   return (frequency_title_content, tfidf_title_content)
 
 def getFScore(prediction,tags):
+    f1Score = 0
+    precision = 0
+    recall = 0
     if len(prediction) == 0 or len(tags) == 0:
-        return 0.0    
-    corrects = 0
-    for p in prediction:
-        if p in tags:
-            corrects = corrects + 1
-    
-    precision = corrects / (len(prediction) + 0.)
-    recall = corrects / (len(tags) + 0.)
-    if precision == 0 or recall == 0:
-        return 0.0     
-    return 2*precision*recall/(precision + recall)
+        f1Score = 0.0
+    else:
+      corrects = 0
+      for p in prediction:
+          if p in tags:
+              corrects = corrects + 1
+      
+      precision = corrects / (len(prediction) + 0.)
+      recall = corrects / (len(tags) + 0.)
+      if precision == 0 or recall == 0:
+          f1Score = 0.0
+      else:
+        f1Score = 2*precision*recall/(precision + recall)  
+    return (f1Score, recall, precision)
   
 def predict_tag(data, fileName):
   predicted_tag, distribution = process_data(data)
   distribution_lines = plot_distribution(distribution, fileName+"_tfidf_distribution.svg", format="svg")
-  #print("plotted")
+  #print(distribution)
+  with open('testing1','w') as f:
+    print("\n*****************************************\n", file=f);
+    print("\n*************" + fileName + "**************\n", file=f);
+    print("\n*****************************************\n", file=f);
+    for item in distribution:
+      print( item, file=f);
+
+  #  print("\n*****************************************\n", file=f);
+
+  #  for item in predicted_tag:
+  #   print( item, file=f);
+
+  pd.DataFrame(distribution).to_csv("test.csv")
   output = []
   ylimit = distribution_lines[0].axes.get_ylim()
   max_tfidf = math.ceil((ylimit[0]+ylimit[1])/2)
-  print (max_tfidf)
+  mean_tfidf = np.mean(distribution)
+  median_tfidf = np.median(distribution)
+  print (median_tfidf)
   accuracy_by_id = []
   scores = []
   for i in range(0,len(data)):
-    prediction = sorted(predicted_tag[i], key=predicted_tag[i].get, reverse=True)[0: max_tfidf]    
+    prediction = sorted(predicted_tag[i], key=predicted_tag[i].get, reverse=True)[0: max_tfidf]
+    
+    #for word in predicted_tag[i]:
+      #if(predicted_tag[i][word] >= mean_tfidf):
+        #prediction.append(word)
+    #prediction = 
     id = data.id[i]
     title = data.title[i]
     content = data.content[i]
@@ -165,31 +201,42 @@ def predict_tag(data, fileName):
       tags = data.tags[i]#.replace('-', ' ')
       tagsClean  = set([wordnet_lemmatizer.lemmatize(word) for word in tags.replace('-',' ').split()])
       f1_score = getFScore(prediction, tagsClean)
-      scores.append(f1_score)
-      accuracy_by_id.append((id, f1_score))
+      scores.append(f1_score[0])
+      
+      accuracy_by_id.append((id, f1_score[0]))
+
+      tags_from_content = [word for word in tagsClean if word in (title + content).lower()]
+
+      f1_score_content = getFScore(prediction, tags_from_content)           
       
       total_tags = len(tagsClean)
       tags_in_title = sum(1 for word in tagsClean if word in title.lower())
       tags_in_content = sum(1 for word in tagsClean if word in content.lower())
-      tags_in_combined = sum(1 for word in tagsClean if word in (title + content).lower())
+      tags_in_combined = len(tags_from_content)
+
+      count_prediction_from_content_tag = sum(1 for tag in prediction if tag in tags_from_content)
+      per_prediction_from_content_tag = None
+
+      if count_prediction_from_content_tag > 0:
+        per_prediction_from_content_tag = (count_prediction_from_content_tag/tags_in_combined)*100
       
       per_tags_in_title = (tags_in_title/total_tags)*100
       per_tags_in_content = (tags_in_content/total_tags)*100
       per_tags_in_combined = (tags_in_combined/total_tags)*100
 
-      output.append([id, ' '.join(prediction), tags, f1_score, total_tags, tags_in_title, tags_in_content, tags_in_combined, per_tags_in_title, per_tags_in_content, per_tags_in_combined])      
+      output.append([id, ' '.join(prediction), tags, per_prediction_from_content_tag, f1_score[0], f1_score[1], f1_score[2],f1_score_content[0], f1_score_content[1], f1_score_content[2], total_tags, tags_in_title, tags_in_content, tags_in_combined, per_tags_in_title, per_tags_in_content, per_tags_in_combined])      
     else:                  
       #print("Test")      
       output.append([id, title, content, ' '.join(prediction)])
       
-  output_file = os.getcwd().replace('script','output')+"/"+fileName + '_output.csv'
+  output_file = os.getcwd().replace('script','output')+"/" + fileName + '_output.csv'
 
   if 'tags' in data:
     print(fileName)
     print(np.average(scores))
-    plot_distribution(scores, fileName+"_accuracy.svg", format="svg")
+    #plot_distribution(scores, fileName+"_accuracy.svg", format="svg")
 
-    columns = ['id','predicted_tags', 'tags', 'f1_score', 'total tags', 'tags in title', 'tags in content', 'tags in combined', '% tags in title', '% tags in content', '% tags in combined']    
+    columns = ['id','predicted_tags', 'tags', "% predicted tags from content", 'f1_score','recall','precision','f1_score content','recall content','precision content', 'total tags', 'tags in title', 'tags in content', 'tags in combined', '% tags in title', '% tags in content', '% tags in combined']    
     pd.DataFrame(data=output, columns = columns).to_csv(output_file, index=False)  
   else:
     pd.DataFrame(data=output,columns = ['id','title', 'content', 'tags']).to_csv(output_file, index=False)
