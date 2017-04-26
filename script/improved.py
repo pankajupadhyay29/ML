@@ -15,9 +15,12 @@ from nltk.stem import WordNetLemmatizer
 from bs4 import BeautifulSoup
 import matplotlib.pyplot as plt
 import operator
+from nltk.corpus.reader.wordnet import NOUN
+from nltk.corpus import wordnet
 
 swords1 = stopwords.words('english')
 punctuations = string.punctuation
+wordnet.MORPHOLOGICAL_SUBSTITUTIONS[NOUN].append(('ing', '')) # customization to remove ing from nouns
 wordnet_lemmatizer = WordNetLemmatizer()
 
 print("Start")
@@ -32,7 +35,7 @@ def data_clean(data):
   data = data.apply(lambda x: word_tokenize(x))
 
   #Select only the nouns
-  is_noun = lambda pos: pos[:2] == 'NN' #or pos[:2] == 'ADJ' 
+  is_noun = lambda pos: pos[:2] in ['NN', 'NNS', 'NNP', 'NNPS'] #or pos[:2] == 'ADJ' 
   for i in range(len(data)):
     data[i] = [word for (word, pos) in nltk.pos_tag(data[i]) if is_noun(pos)]
   
@@ -42,6 +45,8 @@ def data_clean(data):
   data = data.apply(lambda x: [i.split('/') for i in x] )
   data = data.apply(lambda x: [i for y in x for i in y])
   #print('Lemmatizing')
+
+  print(wordnet.MORPHOLOGICAL_SUBSTITUTIONS)
   
   data = data.apply(lambda x: [wordnet_lemmatizer.lemmatize(i) for i in x])
   data = data.apply(lambda x: [i for i in x if len(i)>2])
@@ -215,7 +220,7 @@ def predict_tag(data, fileName):
       tags_in_combined = len(tags_from_content)
 
       count_prediction_from_content_tag = sum(1 for tag in prediction if tag in tags_from_content)
-      per_prediction_from_content_tag = None
+      per_prediction_from_content_tag = 100
 
       if count_prediction_from_content_tag > 0:
         per_prediction_from_content_tag = (count_prediction_from_content_tag/tags_in_combined)*100
